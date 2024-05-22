@@ -123,6 +123,8 @@ in vec3 g_origin;
 in flat int g_id;
 
 
+
+
 layout (binding = 0) uniform Camera
 {
     mat4 viewProj;
@@ -158,6 +160,7 @@ struct HairMaterial{
     float ior;
 
     bool glints; 
+    bool useScatter;
 
     bool r;
     bool tt;
@@ -169,16 +172,27 @@ uniform HairMaterial u_hair;
 uniform sampler2D u_shadowMap;
 uniform sampler2D u_noiseMap;
 
-vec3 sh_normal;
-float halfLength = u_thickness*0.5f;
+float scatterWeight = 0.0;
 
 //Constant
 const float PI = 3.14159265359;
 
 
+
+
 out vec4 fragColor;
 
 
+vec3 shiftTangent(vec3 T, vec3 N, float shift){
+  vec3 shiftedT = T+shift*N;
+  return normalize(shiftedT);
+}
+
+float linearizeDepth(float depth, float near, float far) {
+    float z = depth * 2.0 - 1.0; 
+    float linearZ = (2.0 * near * far) / (far + near - z * (far - near));
+    return (linearZ - near) / (far - near);
+}
 ///Fresnel
 float fresnelSchlick(float ior, float cosTheta) {
     float F0 = ((1.0-ior)*(1.0-ior))/((1.0+ior)*(1.0+ior));
@@ -233,7 +247,7 @@ vec3 NTRT(float sinThetaD, float cosThetaD, float cosPhi){
 //Longitudinal TERM
   float M(float sinTheta, float roughness){
   // return exp(-(sinTheta*sinTheta)/(2*roughness*roughness))/sqrt(2*PI*roughness); //Frostbite 
-  return 1/(roughness*sqrt(2*PI))*exp((-sinTheta*sinTheta)/(2*roughness*roughness)); //Epic. sintheta = sinThetaWi+sinThetaV-alpha
+  return 1.0/(roughness*sqrt(2*PI))*exp((-sinTheta*sinTheta)/(2.0*roughness*roughness)); //Epic. sintheta = sinThetaWi+sinThetaV-alpha
 }
 
 //Real-time Marschnerr
@@ -241,19 +255,21 @@ vec3 computeLighting(){
 
   //--->>>View space
   vec3 wi = normalize(u_scene.lightPos.xyz- g_pos);   //Light vector
-  vec3 n = sh_normal;                                 //Strand shading normal
-  vec3 wo = reflect(wi,n);                            //Reflected vector
+  vec3 n = g_normal;                                 //Strand shading normal
   vec3 v = normalize(-g_pos);                         //Camera vector
   vec3 u = normalize(g_dir);                          //Strand tangent/direction
-  vec3 wh = normalize(wi + v);                         //Halfvector
 
   vec3 radiance = u_scene.lightColor*u_scene.lightIntensity;
-  // vec3 radiance = u_scene.lightColor ;
   
   //Betas
   float betaR = u_hair.roughness*u_hair.roughness;
   float betaTT = 0.5*betaR;
   float betaTRT = 2.0*betaR;
+
+  if(u_hair.glints){
+    float glint = texture(u_noiseMap, vec2(g_id/50000.0,g_uv.y)).r; //Make them move tangent
+    u = shiftTangent(u,n,(glint)*0.1);
+  }
 
   //Theta & Phi
   float sinThetaWi = dot(wi,u);
@@ -267,25 +283,20 @@ vec3 computeLighting(){
   float cosThetaD = cos(thetaD);
   float sinThetaD = sin(thetaD);
 
-  float R = u_hair.r ? M(sinThetaWi+sinThetaV-u_hair.shift*2, betaR )*NR(wi,v,cosPhiD): 0.0; 
+  float R = u_hair.r ? M(sinThetaWi+sinThetaV-u_hair.shift*2.0, betaR )*NR(wi,v,cosPhiD): 0.0; 
   vec3 TT = u_hair.tt ? M(sinThetaWi+sinThetaV+u_hair.shift,betaTT)*NTT(sinThetaD,cosThetaD,cosPhiD): vec3(0.0); 
-  vec3 TRT = u_hair.trt ? M(sinThetaWi+sinThetaV+u_hair.shift*4,betaTRT)*NTRT(sinThetaD,cosThetaD,cosPhiD): vec3(0.0); 
+  vec3 TRT = u_hair.trt ? M(sinThetaWi+sinThetaV+u_hair.shift*4.0,betaTRT)*NTRT(sinThetaD,cosThetaD,cosPhiD): vec3(0.0); 
 
-  float glint = u_hair.glints ? texture(u_noiseMap, vec2(g_id/50000.0,g_uv.y)).r : 1.0;
 
   vec3 albedo = u_hair.baseColor;
   vec3 specular = (R*u_hair.specular+TT+TRT*u_hair.specular);
 
-  return (specular*glint+albedo) * radiance;
+  return (specular+albedo) * radiance;
   
   // return specular/(cosThetaD*cosThetaD)  *radiance;
 
 }
 
-bool isHairShadow(vec2 depthValue){
-    if(depthValue.r == 0.0) return true;
-    return false;
-}
 
 float filterPCF(int kernelSize, vec3 coords, float bias) {
 
@@ -298,14 +309,18 @@ float filterPCF(int kernelSize, vec3 coords, float bias) {
 
     for(int x = -edge; x <= edge; ++x) {
         for(int y = -edge; y <= edge; ++y) {
-            float pcfDepth = isHairShadow( texture(u_shadowMap,coords.xy).rg) ? texture(u_shadowMap, vec2(coords.xy + vec2(x, y) * texelSize* u_scene.kernelRadius*2.0)).g : texture(u_shadowMap, vec2(coords.xy + vec2(x, y) * texelSize* u_scene.kernelRadius)).r;
+            float pcfDepth = texture(u_shadowMap, vec2(coords.xy + vec2(x, y) * texelSize* u_scene.kernelRadius)).r;
 
             //Scatter weight
-            float weight = 1.0-clamp(exp(-u_hair.scatter*abs(currentDepth-pcfDepth)*100),0.0,1.0);
+            float currentZ = linearizeDepth(currentDepth,0.5,100.0);
+            float shadowZ = linearizeDepth(pcfDepth,0.5,100.0);
+            float weight = 1.0-clamp(exp(-u_hair.scatter*abs(currentZ-shadowZ)),0.0,1.0);
+            scatterWeight += weight;
 
-            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
+            shadow += currentDepth - bias > pcfDepth ? 1.0* (u_hair.useScatter ? weight: 1.0) : 0.0;
         }
     }
+    scatterWeight /= (kernelSize * kernelSize);
     return shadow /= (kernelSize * kernelSize);
 
 }
@@ -322,7 +337,7 @@ float computeShadow(){
         return 0.0;
 
     vec3 lightDir = normalize(u_scene.lightPos.xyz - g_pos);
-    float bias = max(u_scene.shadowBias *  5.0 * (1.0 - dot(sh_normal, lightDir)),u_scene.shadowBias);  //Modulate by angle of incidence
+    float bias = max(u_scene.shadowBias *  5.0 * (1.0 - dot(g_dir, lightDir)),u_scene.shadowBias);  //Modulate by angle of incidence
    
     return filterPCF(int(u_scene.pcfKernelSize), projCoords,bias);
 
@@ -332,41 +347,19 @@ float getLuminance(vec3 li){
   return 0.2126*li.r + 0.7152*li.g+0.0722*li.b;
 }
 
-vec3 multipleScattering(float shadow){
+vec3 multipleScattering(){
   
   vec3 l = normalize(u_scene.lightPos.xyz- g_pos);  //Light vector
   vec3 r = normalize(-g_pos);       
-  // vec3 r = reflect(l,sh_normal); 
   vec3 u = normalize(g_dir); 
   
   vec3 n = normalize(r - u * dot(u,r));
    
-
-  vec3 scattering = pow(u_hair.baseColor/getLuminance(u_scene.lightColor),vec3(shadow));
+  // float wrapLight = (dot(n,l)+1.0)/(4.0*PI);
+  vec3 scattering = pow(u_hair.baseColor/getLuminance(u_scene.lightColor),vec3(scatterWeight));
   return scattering;
 
-//   We used ideas from the Agni’s Philosophy demo
-// We don’t author a normal and use this fake normal instead.
-// It is theoretically better to have an actual normal either authored, calculated by
-// tracing similar to bent normals or derived from a filtered distance field of the
-// volume.
-// In my tests I found little extra benefit from an authored normal when filtered
-// shadowing was applied. Skipping authoring nice normals both saves artist time
-// and gbuffer space.
-// u from the diagram many slides ago is a vector parallel to the hair fiber
-// The rest of the scattering approximation is a wrapped Lambert, and an
-// absorption based on the direct light path length through the hair volume.
-// That path length is derived from the exponential shadow value.
-// This is all a giant artistic hack and not physically based in the slightest. It was
-// derived by looking at photos, not ground truth renders. Future work would be
-// to implement this direct light model in a path tracer and see what
-// approximations could be made with no bounces to match the multi bounc
 
-  //NOTAS
-  //r. Asumamos que es una reflexion del vector incidente sobre la shading normal
-  //luma es luminance
-  //No entiendo el pow, glsl no deja hacer pows de vec3 con floats
-  //El valor de mal llamado shadow, supongo que sera el valor de depth guardado en el shadow map
 
 
 }
@@ -375,9 +368,11 @@ vec3 multipleScattering(float shadow){
 void main() {
 
     vec3 color  = computeLighting();
-    if(u_scene.castShadow==1.0) //If light cast shadows
+    if(u_scene.castShadow==1.0){
         color*= 1.0 - computeShadow();
-    // color*=multipleScattering();
+        if(u_hair.useScatter)
+            color*= multipleScattering();
+    }
 
     vec3 ambient = (u_scene.ambientIntensity * u_scene.ambientColor) * u_hair.baseColor ;
     color+=ambient;

@@ -22,7 +22,7 @@ struct HairSettings
         10.0f / 255.0f);
     float specular = 5.0f;
     float roughness = 0.4f;
-    float scatter = 9.5f;
+    float scatter = 250.0f;
     float shift = 0.12f; // In radians (-5º to -10º) => 0.088 to 0.17 //Not with epic 0.02 does fine
     float ior = 1.55f;
 
@@ -30,7 +30,8 @@ struct HairSettings
     bool tt = true;
     bool trt = true;
 
-    bool glints = true;
+    bool glints = false;
+    bool useScatter = true;
 #else
     // glm::vec3 color = glm::vec3(0.95f, 0.65f, 0.16f);
     glm::vec3 color = glm::vec3(0.6f, 0.078f, 0.078f);
