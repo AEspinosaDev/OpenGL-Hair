@@ -31,9 +31,11 @@ void Renderer::create_context()
     }
 
     glfwMakeContextCurrent(m_window.ptr);
-    if (glewInit() != GLEW_OK)
+
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
-        fprintf(stderr, "Failed to initialize GLEW\n");
+        glfwDestroyWindow(m_window.ptr);
+        glfwTerminate();
     }
 
     glfwSwapInterval(m_settings.vSync);

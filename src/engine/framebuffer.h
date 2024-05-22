@@ -88,7 +88,7 @@ public:
 
     static void clear_depth_bit();
 
-    static void clear_bits(unsigned int bits = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BITS);
+    static void clear_bits(unsigned int bits = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     static void enable_depth_test(bool op);
 

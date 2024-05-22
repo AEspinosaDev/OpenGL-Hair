@@ -9,7 +9,7 @@ void HairRenderer::init()
 #pragma region INIT
     Renderer::init();
 
-    chdir("/home/tony/Dev/Hair-Renderer/");
+    // chdir("/home/tony/Dev/Hair-Renderer/");
 
     m_camera = new Camera(m_window.extent.width, m_window.extent.height, {0.0f, 0.0f, -10.0f});
 
@@ -22,13 +22,13 @@ void HairRenderer::init()
     m_head = new Mesh();
 
     m_floor = new Mesh();
-    loaders::load_OBJ(m_floor, "resources/models/plane.obj");
+    loaders::load_OBJ(m_floor,RESOURCES_PATH"models/plane.obj");
     m_floor->set_scale(50.0f);
     m_floor->set_position({0.0f, -4.0f, 0.0f});
 
     m_light.light = new PointLight();
     m_light.dummy = new Mesh();
-    loaders::load_OBJ(m_light.dummy, "resources/models/sphere.obj");
+    loaders::load_OBJ(m_light.dummy,RESOURCES_PATH"models/sphere.obj");
     m_light.set_position({6.0f, 3.0f, -6.0f});
 
 #pragma endregion
@@ -139,13 +139,13 @@ void HairRenderer::init()
     m_globalUBO->generate();
 
     GraphicPipeline litPipeline{};
-    litPipeline.shader = new Shader("resources/shaders/cook-torrance.glsl", ShaderType::LIT);
+    litPipeline.shader = new Shader(RESOURCES_PATH"shaders/cook-torrance.glsl", ShaderType::LIT);
     litPipeline.shader->set_uniform_block("Camera", UBOLayout::CAMERA_LAYOUT);
     litPipeline.shader->set_uniform_block("Scene", UBOLayout::GLOBAL_LAYOUT);
     Material *headMaterial = new Material(litPipeline);
     headMaterial->set_texture("u_shadowMap", m_shadowFBO->get_attachments().front().texture);
     Texture *skin = new Texture();
-    loaders::load_image(skin, "resources/images/head.png");
+    loaders::load_image(skin, RESOURCES_PATH"images/head.png");
     skin->generate();
     headMaterial->set_texture("u_albedoMap", skin, 1);
     m_head->set_material(headMaterial);
@@ -156,7 +156,7 @@ void HairRenderer::init()
 
     GraphicPipeline hairPipeline{};
 #ifdef MARSCHNER
-    hairPipeline.shader = new Shader("resources/shaders/strand-marschner.glsl", ShaderType::LIT);
+    hairPipeline.shader = new Shader(RESOURCES_PATH"shaders/strand-marschner.glsl", ShaderType::LIT);
 #else
     hairPipeline.shader = new Shader("resources/shaders/strand-kajiya.glsl", ShaderType::LIT);
 #endif
@@ -168,14 +168,14 @@ void HairRenderer::init()
     m_hair->set_material(hairMaterial);
 
     GraphicPipeline unlitPipeline{};
-    unlitPipeline.shader = new Shader("resources/shaders/unlit.glsl", ShaderType::UNLIT);
+    unlitPipeline.shader = new Shader(RESOURCES_PATH"shaders/unlit.glsl", ShaderType::UNLIT);
     unlitPipeline.shader->set_uniform_block("Camera", UBOLayout::CAMERA_LAYOUT);
     Material *lightMaterial = new Material(unlitPipeline);
     m_light.dummy->set_material(lightMaterial);
 
-    m_depthPipeline.shader = new Shader("resources/shaders/depth.glsl", ShaderType::OTHER);
+    m_depthPipeline.shader = new Shader(RESOURCES_PATH"shaders/depth.glsl", ShaderType::OTHER);
 
-    m_noisePipeline.shader = new Shader("resources/shaders/noise-gen.glsl", ShaderType::OTHER);
+    m_noisePipeline.shader = new Shader(RESOURCES_PATH"shaders/noise-gen.glsl", ShaderType::OTHER);
 
 #ifdef FXAA
     m_fxaaPipeline.shader = new Shader("resources/shaders/fxaa.glsl", ShaderType::OTHER);
@@ -186,7 +186,7 @@ void HairRenderer::init()
 
 
     GraphicPipeline skyboxPipeline{};
-    skyboxPipeline.shader = new Shader("resources/shaders/skybox.glsl", ShaderType::OTHER);
+    skyboxPipeline.shader = new Shader(RESOURCES_PATH"shaders/skybox.glsl", ShaderType::OTHER);
     skyboxPipeline.state.depthFunction = DepthFuncType::LEQUAL;
 
     Material *skyboxMaterial = new Material(skyboxPipeline);
@@ -202,7 +202,7 @@ void HairRenderer::init()
     skymapConfig.wrapR = GL_CLAMP_TO_EDGE;
 
     Texture *skymap = new Texture({2048, 2048}, skymapConfig);
-    loaders::load_image(skymap, "resources/images/room.hdr", true);
+    loaders::load_image(skymap, RESOURCES_PATH"images/room.hdr", true);
     skymap->generate();
     skyboxMaterial->set_texture("u_skymap", skymap);
 
@@ -215,11 +215,11 @@ void HairRenderer::init()
 #ifdef YUKSEL
     // CEM YUKSEL MODELS
     {
-        std::thread loadThread1(loaders::load_PLY, m_head, "resources/models/woman.ply", true, true, false);
+        std::thread loadThread1(loaders::load_PLY, m_head, RESOURCES_PATH"models/woman.ply", true, true, false);
         loadThread1.detach();
         m_head->set_rotation({180.0f, -90.0f, 0.0f});
         m_head->set_scale(0.98f);
-        std::thread loadThread2(hair_loaders::load_cy_hair, m_hair, "resources/models/curly.hair");
+        std::thread loadThread2(hair_loaders::load_cy_hair, m_hair, RESOURCES_PATH"models/curly.hair");
         loadThread2.detach();
 
         // Low poly
@@ -461,7 +461,7 @@ void HairRenderer::setup_user_interface_frame()
     ImGui::DragFloat("Specular", &m_hairSettings.specular, .05f, 0.0f, 30.0f);
     ImGui::DragFloat("Roughness", &m_hairSettings.roughness, .05f, 0.0f, 1.0f);
     ImGui::DragFloat("Scatter", &m_hairSettings.scatter, 1.f, 0.0f, 1000.0f);
-    ImGui::DragFloat("Shift", &m_hairSettings.shift, -0.05f, 2 * M_PI, M_PI_2);
+    ImGui::DragFloat("Shift", &m_hairSettings.shift, -0.05f, 0.0F ,2.0F );
     ImGui::DragFloat("IOR", &m_hairSettings.ior, 0.01f, 0.0f, 10.0f);
     ImGui::Checkbox("Glints", &m_hairSettings.glints);
     ImGui::Spacing();

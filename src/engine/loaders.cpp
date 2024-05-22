@@ -304,9 +304,9 @@ void loaders::load_PLY(Mesh *const mesh, const char *fileName, bool preload, boo
         if (positions)
         {
             const float *posData = reinterpret_cast<const float *>(positions->buffer.get());
-            const float *normalData;
-            unsigned char *colorData;
-            const float *uvData;
+            const float *normalData = nullptr;
+            unsigned char *colorData = nullptr;
+            const float *uvData = nullptr;
 
             if (normals)
                 normalData = reinterpret_cast<const float *>(normals->buffer.get());

@@ -5,6 +5,8 @@
 #include <deque>
 #include <fstream>
 #include <chrono>
+#include <vector>
+
 #include "core.h"
 
 GLIB_NAMESPACE_BEGIN
